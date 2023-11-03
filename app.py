@@ -1,9 +1,9 @@
 from flask import Flask, request, jsonify
 import requests
 import psycopg2
-import time
 import random
-import os
+from circuitbreaker import circuit
+from requests.exceptions import HTTPError
 
 app = Flask(__name__)
 
@@ -20,10 +20,12 @@ conn = psycopg2.connect(
 def get_anime(anime_id):
     anime_id = random.randint(1, 1000)
     anime_data = get_anime_details(anime_id)
-    if anime_data:
-        return jsonify(anime_data)
+    if anime_data.status_code == 200:
+        print("OK\n")
+        return anime_data.json()["data"]
     else:
-        return jsonify({"error": "Anime no encontrado"}), 404
+        return anime_data
+
 
 # Function to get anime details from the database
 def get_cached_anime_details(anime_id):
@@ -41,16 +43,32 @@ def get_cached_anime_details(anime_id):
             return selected_data
     return None
 
+# Función para obtener detalles de anime desde Jikan API
+def custom_fallback():
+    print("Here\n")
+    return "Servicio no disponible temporalmente. Por favor, inténtalo más tarde."
+
+def is_rate_limited(thrown_type, thrown_value):
+    if issubclass(thrown_type, HTTPError):
+        response = getattr(thrown_value, 'response', None)
+        if response and response.status_code == 429:
+            # Incrementa el recuento de errores cuando se produce un error 429
+            return True  # Marca la excepción HTTP 429 como un fallo
+    return False  # No es un fallo si no es un error 429
+
+
 # Function to get anime details from the Jikan API and store in the database
+@circuit(failure_threshold=3, expected_exception=is_rate_limited, fallback_function=custom_fallback)
 def get_anime_details(anime_id):
     cached_data = get_cached_anime_details(anime_id)
     if cached_data:
         print('in cache', anime_id)
         return cached_data
-    
+
     url = f'https://api.jikan.moe/v4/anime/{anime_id}/full'
-        
+
     response = requests.get(url)
+    response.raise_for_status()
 
     if response.status_code == 200:
         anime_data = response.json()["data"]
@@ -69,11 +87,8 @@ def get_anime_details(anime_id):
             """
             cur.execute(insert_query, selected_data)
             conn.commit()
-
-        return selected_data
-    
-    else:
-        return response, 500
+    return response
+        
 
 if __name__ == '__main__':
     app.run(debug=True)

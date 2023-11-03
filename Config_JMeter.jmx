@@ -80,7 +80,7 @@
               <connectTime>true</connectTime>
             </value>
           </objProp>
-          <stringProp name="filename">/mnt/50A68CE3A68CCB44/UTEC/2023_2/Software_02/Semana12/Results_01.csv</stringProp>
+          <stringProp name="filename"></stringProp>
         </ResultCollector>
         <hashTree/>
       </hashTree>
